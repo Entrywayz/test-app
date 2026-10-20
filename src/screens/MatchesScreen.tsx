@@ -1,24 +1,42 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { UpdatedAgo } from '../components/UpdatedAgo';
 import { Match, MatchesResponse } from '../../interfaces/match';
 import { MATCHES_URL } from '../config';
+
+type FilterType = 'all' | 'upcoming' | 'finished';
+
+const FILTERS: { key: FilterType; label: string }[] = [
+  { key: 'all', label: 'Все' },
+  { key: 'upcoming', label: 'Предстоящие' },
+  { key: 'finished', label: 'Завершённые' },
+];
 
 export function MatchesScreen() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [round, setRound] = useState<number | null>(null);
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const fetchMatches = async () => {
-    setIsLoading(true);
+  const fetchMatches = async (isPullToRefresh = false) => {
+    if (isPullToRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
+
     try {
       const response = await fetch(MATCHES_URL);
 
@@ -29,16 +47,31 @@ export function MatchesScreen() {
       const data: MatchesResponse = await response.json();
       setMatches(data.matches);
       setRound(data.round);
-    } catch (err: any) {
-      setError(err?.message || 'Не удалось загрузить матчи');
+      setLastUpdated(new Date());
+    } catch(err: any) {
+      setError(err.message)
+      setLastUpdated(new Date());
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchMatches();
   }, []);
+
+  const filteredMatches = useMemo(() => {
+    if (activeFilter === 'upcoming') {
+      return matches.filter((item) =>
+        item.status === 'scheduled' || item.status === 'live' || item.status === 'postponed'
+      );
+    }
+    if (activeFilter === 'finished') {
+      return matches.filter((item) => item.status === 'finished');
+    }
+    return matches;
+  }, [matches, activeFilter]);
 
   const renderMatchInfo = (item: Match) => {
     switch (item.status) {
@@ -61,8 +94,6 @@ export function MatchesScreen() {
             })}
           </Text>
         );
-      default:
-        return null;
     }
   };
 
@@ -80,7 +111,12 @@ export function MatchesScreen() {
 
         <View style={styles.scoreContainer}>
           {item.score ? (
-            <Text style={styles.scoreText}>
+            <Text
+              style={[
+                styles.scoreText,
+                item.status === 'live' && styles.liveScoreText,
+              ]}
+            >
               {item.score.home} : {item.score.away}
             </Text>
           ) : (
@@ -100,11 +136,51 @@ export function MatchesScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
-        {round ? `Матчи ${round}-го тура` : 'Матчи тура'}
-      </Text>
+      <View style={styles.header}>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.title}>
+            {round ? `Матчи ${round}-го тура` : 'Матчи тура'}
+          </Text>
+          {lastUpdated && (
+            <UpdatedAgo key={lastUpdated.getTime()} since={lastUpdated} />
+          )}
+        </View>
 
-      {isLoading && (
+        <Pressable
+          style={styles.refreshButton}
+          onPress={() => fetchMatches(false)}
+          disabled={isLoading || isRefreshing}
+        >
+          <Text style={styles.refreshButtonText}>Обновить</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.filterContainer}>
+        {FILTERS.map((filter) => {
+          const isActive = activeFilter === filter.key;
+          return (
+            <Pressable
+              key={filter.key}
+              style={[
+                styles.filterButton,
+                isActive && styles.filterButtonActive,
+              ]}
+              onPress={() => setActiveFilter(filter.key)}
+            >
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  isActive && styles.filterButtonTextActive,
+                ]}
+              >
+                {filter.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {isLoading && !isRefreshing && (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#007AFF" />
           <Text style={styles.loadingText}>Загрузка данных...</Text>
@@ -114,7 +190,7 @@ export function MatchesScreen() {
       {error && !isLoading && (
         <View style={styles.centerContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={fetchMatches}>
+          <Pressable style={styles.retryButton} onPress={() => fetchMatches(false)}>
             <Text style={styles.retryButtonText}>Повторить</Text>
           </Pressable>
         </View>
@@ -122,11 +198,19 @@ export function MatchesScreen() {
 
       {!isLoading && !error && (
         <FlatList
-          data={matches}
+          data={filteredMatches}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => fetchMatches(true)}
+              tintColor="#007AFF"
+              colors={['#007AFF']}
+            />
+          }
           ListEmptyComponent={
             <Text style={styles.emptyText}>Нет доступных матчей</Text>
           }
@@ -143,11 +227,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: '#F7F8FA',
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headerTitleContainer: {
+    flex: 1,
+  },
   title: {
     fontSize: 22,
     fontWeight: '700',
     color: '#1C1C1E',
+    marginBottom: 2,
+  },
+  refreshButton: {
+    backgroundColor: '#E5E5EA',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E5E5EA',
+    borderRadius: 8,
+    padding: 3,
     marginBottom: 16,
+  },
+  filterButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  filterButtonActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  filterButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#8E8E93',
+  },
+  filterButtonTextActive: {
+    color: '#1C1C1E',
+    fontWeight: '700',
   },
   listContent: {
     paddingBottom: 24,
@@ -210,6 +344,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#1C1C1E',
+  },
+  liveScoreText: {
+    color: '#FF3B30',
   },
   vsText: {
     fontSize: 14,
