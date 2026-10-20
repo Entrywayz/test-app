@@ -8,7 +8,9 @@ import {
   Text,
   View,
 } from 'react-native';
+import { FavoriteButton } from '../components/FavoriteButton';
 import { UpdatedAgo } from '../components/UpdatedAgo';
+import { useFavorites } from '../hooks/useFavorites';
 import { Match, MatchesResponse } from '../../interfaces/match';
 import { MATCHES_URL } from '../config';
 
@@ -29,6 +31,8 @@ export function MatchesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  const { isFavorite, toggleFavorite } = useFavorites();
+
   const fetchMatches = async (isPullToRefresh = false) => {
     if (isPullToRefresh) {
       setIsRefreshing(true);
@@ -48,8 +52,8 @@ export function MatchesScreen() {
       setMatches(data.matches);
       setRound(data.round);
       setLastUpdated(new Date());
-    } catch(err: any) {
-      setError(err.message)
+    } catch (err: any) {
+      setError(err.message);
       setLastUpdated(new Date());
     } finally {
       setIsLoading(false);
@@ -99,7 +103,14 @@ export function MatchesScreen() {
 
   const renderItem = ({ item }: { item: Match }) => (
     <View style={styles.card}>
-      <View style={styles.cardHeader}>{renderMatchInfo(item)}</View>
+      <View style={styles.cardHeader}>
+        <View style={styles.headerSpacer} />
+        <View style={styles.statusContainer}>{renderMatchInfo(item)}</View>
+        <FavoriteButton
+          isFavorite={isFavorite(item.id)}
+          onPress={() => toggleFavorite(item.id)}
+        />
+      </View>
 
       <View style={styles.matchContent}>
         <View style={styles.teamContainer}>
@@ -298,8 +309,16 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cardHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 8,
+  },
+  headerSpacer: {
+    width: 28,
+  },
+  statusContainer: {
+    alignItems: 'center',
   },
   statusText: {
     fontSize: 12,

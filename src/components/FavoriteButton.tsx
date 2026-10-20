@@ -1,30 +1,38 @@
+import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 type Props = {
-  active: boolean;
+  isFavorite: boolean;
   onPress: () => void;
 };
 
-// Звёздочка «в избранное».
-export function FavoriteButton({ active, onPress }: Props) {
+export function FavoriteButton({ isFavorite, onPress }: Props) {
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={12}
+      hitSlop={10}
+      style={styles.button}
       accessibilityRole="button"
-      accessibilityLabel={active ? 'Убрать из избранного' : 'Добавить в избранное'}
+      accessibilityLabel={isFavorite ? 'Удалить из избранного' : 'Добавить в избранное'}
     >
-      <Text style={[styles.star, active && styles.active]}>{active ? '★' : '☆'}</Text>
+      <Text style={[styles.star, isFavorite && styles.starActive]}>
+        {isFavorite ? '★' : '☆'}
+      </Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  button: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   star: {
     fontSize: 22,
-    color: '#9ca3af',
+    color: '#C7C7CC',
   },
-  active: {
-    color: '#ef3124',
+  starActive: {
+    color: '#FFCC00',
   },
 });
